@@ -5,6 +5,7 @@ namespace BinanceAnalysis.API
     using BinanceAnalysis.Data.DependencyInjection;
     using BinanceAnalysis.Data.Seeding;
     using Microsoft.EntityFrameworkCore;
+    using BinanceAnalysis.Services.Data.DependencyInjection;
 
     public class Program
     {
@@ -13,7 +14,9 @@ namespace BinanceAnalysis.API
             var builder = WebApplication.CreateBuilder(args);
             // Add services to the container.
 
-            builder.Services.AddControllers();
+            builder.Services
+            .AddControllers()
+            .AddXmlSerializerFormatters();
             // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
             builder.Services.AddOpenApi();
             builder.Services.AddDataServices(builder.Configuration);

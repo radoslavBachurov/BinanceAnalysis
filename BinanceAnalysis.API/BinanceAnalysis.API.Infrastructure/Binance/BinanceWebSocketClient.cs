@@ -1,7 +1,7 @@
-﻿
-namespace BinanceAnalysis.API.Infrastructure.Binance
+﻿namespace BinanceAnalysis.API.Infrastructure.Binance
 {
     using System;
+    using System.Collections.Generic;
     using System.IO;
     using System.Linq;
     using System.Net.WebSockets;
@@ -15,36 +15,150 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
         private const int BufferSize = 8192;
         private const int MaxMessageSize = 1024 * 1024;
 
-        private const string BaseUrl =
-            "wss://stream.binance.com:9443/stream?streams=";
+        private static readonly Uri BaseUri =
+            new("wss://stream.binance.com:9443/stream");
 
         public async Task ListenToTradesAsync(
-            string[] symbols,
+            string[] initialSymbols,
             Func<BinanceTradeEvent, CancellationToken, Task> onTrade,
+            Func<
+                Func<IReadOnlyCollection<string>, CancellationToken, Task>,
+                CancellationToken,
+                Task> runSubscriptionManager,
             CancellationToken cancellationToken)
         {
-            ArgumentNullException.ThrowIfNull(symbols);
+            ArgumentNullException.ThrowIfNull(initialSymbols);
             ArgumentNullException.ThrowIfNull(onTrade);
-
-            if (symbols.Length == 0)
-            {
-                throw new ArgumentException(
-                    "At least one symbol must be provided.",
-                    nameof(symbols));
-            }
-
-            var streams = string.Join(
-                "/",
-                symbols.Select(symbol => $"{symbol.ToLowerInvariant()}@trade"));
-
-            var uri = new Uri($"{BaseUrl}{streams}");
+            ArgumentNullException.ThrowIfNull(runSubscriptionManager);
 
             using var socket = new ClientWebSocket();
+            using var sendLock = new SemaphoreSlim(1, 1);
 
             socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
 
-            await socket.ConnectAsync(uri, cancellationToken);
+            await socket.ConnectAsync(BaseUri, cancellationToken);
 
+            var subscribedSymbols = new HashSet<string>(
+                StringComparer.OrdinalIgnoreCase);
+
+            var requestId = 0;
+
+            async Task UpdateSubscriptionsAsync(
+                IReadOnlyCollection<string> requestedSymbols,
+                CancellationToken token)
+            {
+                var desiredSymbols = requestedSymbols
+                    .Where(symbol => !string.IsNullOrWhiteSpace(symbol))
+                    .Select(symbol => symbol.Trim().ToUpperInvariant())
+                    .ToHashSet(StringComparer.OrdinalIgnoreCase);
+
+                var symbolsToSubscribe = desiredSymbols
+                    .Except(subscribedSymbols)
+                    .ToArray();
+
+                var symbolsToUnsubscribe = subscribedSymbols
+                    .Except(desiredSymbols)
+                    .ToArray();
+
+                if (symbolsToSubscribe.Length > 0)
+                {
+                    await SendSubscriptionCommandAsync(
+                        socket,
+                        sendLock,
+                        "SUBSCRIBE",
+                        symbolsToSubscribe,
+                        ++requestId,
+                        token);
+
+                    subscribedSymbols.UnionWith(symbolsToSubscribe);
+                }
+
+                if (symbolsToUnsubscribe.Length > 0)
+                {
+                    await SendSubscriptionCommandAsync(
+                        socket,
+                        sendLock,
+                        "UNSUBSCRIBE",
+                        symbolsToUnsubscribe,
+                        ++requestId,
+                        token);
+
+                    subscribedSymbols.ExceptWith(symbolsToUnsubscribe);
+                }
+            }
+
+            // Subscribe to the initial symbols.
+            await UpdateSubscriptionsAsync(
+                initialSymbols,
+                cancellationToken);
+
+            using var linkedCts =
+                CancellationTokenSource.CreateLinkedTokenSource(
+                    cancellationToken);
+
+            var receiveTask = ReceiveTradesAsync(
+                socket,
+                onTrade,
+                linkedCts.Token);
+
+            var subscriptionTask = runSubscriptionManager(
+                UpdateSubscriptionsAsync,
+                linkedCts.Token);
+
+            try
+            {
+                await Task.WhenAny(receiveTask, subscriptionTask);
+                linkedCts.Cancel();
+
+                await Task.WhenAll(receiveTask, subscriptionTask);
+            }
+            catch (OperationCanceledException)
+                when (linkedCts.IsCancellationRequested)
+            {
+                // Expected when the connection is closed or cancelled.
+            }
+        }
+
+        private static async Task SendSubscriptionCommandAsync(
+            ClientWebSocket socket,
+            SemaphoreSlim sendLock,
+            string method,
+            string[] symbols,
+            int requestId,
+            CancellationToken cancellationToken)
+        {
+            var streams = symbols
+                .Select(symbol => $"{symbol.ToLowerInvariant()}@trade")
+                .ToArray();
+
+            var command = JsonSerializer.SerializeToUtf8Bytes(new
+            {
+                method,
+                @params = streams,
+                id = requestId
+            });
+
+            await sendLock.WaitAsync(cancellationToken);
+
+            try
+            {
+                await socket.SendAsync(
+                    new ArraySegment<byte>(command),
+                    WebSocketMessageType.Text,
+                    true,
+                    cancellationToken);
+            }
+            finally
+            {
+                sendLock.Release();
+            }
+        }
+
+        private static async Task ReceiveTradesAsync(
+            ClientWebSocket socket,
+            Func<BinanceTradeEvent, CancellationToken, Task> onTrade,
+            CancellationToken cancellationToken)
+        {
             var buffer = new byte[BufferSize];
 
             while (!cancellationToken.IsCancellationRequested &&
@@ -62,14 +176,6 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
 
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
-                        if (socket.State == WebSocketState.CloseReceived)
-                        {
-                            await socket.CloseOutputAsync(
-                                socket.CloseStatus ?? WebSocketCloseStatus.NormalClosure,
-                                socket.CloseStatusDescription,
-                                CancellationToken.None);
-                        }
-
                         return;
                     }
 
@@ -91,9 +197,12 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
 
                 } while (!result.EndOfMessage);
 
-                var message = JsonSerializer.Deserialize<BinanceCombinedStreamMessage>(
-                    messageStream.ToArray());
+                var message =
+                    JsonSerializer.Deserialize<BinanceCombinedStreamMessage>(
+                        messageStream.ToArray());
 
+                // Subscription acknowledgements also arrive over this socket.
+                // They don't contain a trade event, so we ignore them.
                 if (message?.Data is not { } trade)
                 {
                     continue;

@@ -22,6 +22,8 @@ namespace BinanceAnalysis.Services.Data.DependencyInjection
 
             services.AddHostedService<TradeIngestionService>();
 
+            services.AddScoped<IPriceAnalysisService, PriceAnalysisService>();
+
             return services;
         }
     }

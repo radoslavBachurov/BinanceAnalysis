@@ -14,5 +14,7 @@ namespace BinanceAnalysis.Services.Data.Trading
         public int InitialReconnectDelaySeconds { get; set; } = 1;
 
         public int MaximumReconnectDelaySeconds { get; set; } = 30;
+
+        public int SymbolRefreshIntervalSeconds { get; set; } = 10;
     }
 }

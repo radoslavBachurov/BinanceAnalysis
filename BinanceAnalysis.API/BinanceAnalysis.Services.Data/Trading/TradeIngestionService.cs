@@ -1,5 +1,4 @@
-﻿
-namespace BinanceAnalysis.Services.Data.Trading
+﻿namespace BinanceAnalysis.Services.Data.Trading
 {
     using System;
     using System.Collections.Generic;
@@ -35,7 +34,8 @@ namespace BinanceAnalysis.Services.Data.Trading
             this.logger = logger;
             this.options = options.Value;
 
-            if (this.options.ChannelCapacity <= 0 ||
+            if (this.options.SymbolRefreshIntervalSeconds <= 0 || 
+                this.options.ChannelCapacity <= 0 ||
                 this.options.BatchSize <= 0 ||
                 this.options.FlushIntervalSeconds <= 0 ||
                 this.options.InitialReconnectDelaySeconds <= 0 ||
@@ -121,14 +121,15 @@ namespace BinanceAnalysis.Services.Data.Trading
                         string.Join(", ", symbols));
 
                     await this.webSocketClient.ListenToTradesAsync(
-                        symbols,
-                        async (trade, token) =>
-                        {
-                            await this.channel.Writer.WriteAsync(
-                                trade,
-                                token);
-                        },
-                        cancellationToken);
+                symbols,
+                async (trade, token) =>
+                {
+                     await this.channel.Writer.WriteAsync(trade, token);
+                },
+                this.RunSubscriptionManagerAsync,
+                cancellationToken);
+
+                    reconnectDelay = this.options.InitialReconnectDelaySeconds;
 
                     this.logger.LogWarning(
                         "Binance WebSocket connection closed.");
@@ -252,6 +253,29 @@ namespace BinanceAnalysis.Services.Data.Trading
             await persistenceService.PersistBatchAsync(
                 batch,
                 CancellationToken.None);
+        }
+
+        private async Task RunSubscriptionManagerAsync(
+        Func<IReadOnlyCollection<string>, CancellationToken, Task> updateSubscriptions,
+        CancellationToken cancellationToken)
+        {
+            using var timer = new PeriodicTimer(
+                TimeSpan.FromSeconds(
+                    this.options.SymbolRefreshIntervalSeconds));
+
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                var activeSymbols = await this.GetActiveSymbolsAsync(
+                    cancellationToken);
+
+                this.logger.LogInformation(
+                    "Refreshing Binance subscriptions. Active symbols: {Symbols}",
+                    string.Join(", ", activeSymbols));
+
+                await updateSubscriptions(
+                    activeSymbols,
+                    cancellationToken);
+            }
         }
     }
 }

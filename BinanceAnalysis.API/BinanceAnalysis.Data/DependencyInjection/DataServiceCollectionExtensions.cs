@@ -1,11 +1,12 @@
 ﻿
 namespace BinanceAnalysis.Data.DependencyInjection
 {
-    using System;
     using BinanceAnalysis.Data;
+    using BinanceAnalysis.Data.Seeding;
     using Microsoft.EntityFrameworkCore;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
+    using System;
 
     public static class DataServiceCollectionExtensions
     {
@@ -22,6 +23,9 @@ namespace BinanceAnalysis.Data.DependencyInjection
 
             services.AddDbContext<ApplicationDbContext>(options =>
                 options.UseSqlServer(connectionString));
+
+            services.AddScoped<ISeeder, MonitoredSymbolsSeeder>();
+            services.AddScoped<ApplicationDbContextSeeder>();
 
             return services;
         }

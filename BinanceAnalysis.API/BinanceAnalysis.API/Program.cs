@@ -1,15 +1,16 @@
 
 namespace BinanceAnalysis.API
 {
+    using BinanceAnalysis.Data;
     using BinanceAnalysis.Data.DependencyInjection;
-    using Microsoft.Extensions.DependencyInjection;
+    using BinanceAnalysis.Data.Seeding;
+    using Microsoft.EntityFrameworkCore;
 
     public class Program
     {
-        public static void Main(string[] args)
+        public static async Task Main(string[] args)
         {
             var builder = WebApplication.CreateBuilder(args);
-
             // Add services to the container.
 
             builder.Services.AddControllers();
@@ -18,6 +19,19 @@ namespace BinanceAnalysis.API
             builder.Services.AddDataServices(builder.Configuration);
 
             var app = builder.Build();
+
+            await using (var scope = app.Services.CreateAsyncScope())
+            {
+                var dbContext = scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContext>();
+
+                await dbContext.Database.MigrateAsync();
+
+                var seeder = scope.ServiceProvider
+                    .GetRequiredService<ApplicationDbContextSeeder>();
+
+                await seeder.SeedAsync();
+            }
 
             // Configure the HTTP request pipeline.
             if (app.Environment.IsDevelopment())
@@ -29,10 +43,9 @@ namespace BinanceAnalysis.API
 
             app.UseAuthorization();
 
-
             app.MapControllers();
 
-            app.Run();
+            await app.RunAsync();
         }
     }
 }

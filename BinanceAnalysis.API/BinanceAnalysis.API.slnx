@@ -4,6 +4,9 @@
     <Project Path="BinanceAnalysis.API.ViewModels/BinanceAnalysis.API.ViewModels.csproj" Id="8d26f6a4-8f6e-433d-8302-cec8ba7e1206" />
     <Project Path="BinanceAnalysis.API/BinanceAnalysis.API.csproj" />
   </Folder>
+  <Folder Name="/Clients/">
+    <Project Path="BinanceAnalysis.Console/BinanceAnalysis.Console.csproj" Id="8e803c8d-90e6-4e21-bbe2-d5ceb3ad9a4c" />
+  </Folder>
   <Folder Name="/Data/">
     <Project Path="BinanceAnalysis.Data.Common/BinanceAnalysis.Data.Common.csproj" Id="3fb8f42b-fbcf-44d6-97f8-ef7fd0a71b0b" />
     <Project Path="BinanceAnalysis.Data.Models/BinanceAnalysis.Data.Models.csproj" Id="bfc623ac-0022-4cf0-8268-5ecc636ce097" />

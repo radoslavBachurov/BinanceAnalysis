@@ -17,6 +17,7 @@ namespace BinanceAnalysis.API
             // Learn more about configuring OpenAPI at https://aka.ms/aspnet/openapi
             builder.Services.AddOpenApi();
             builder.Services.AddDataServices(builder.Configuration);
+            builder.Services.AddTradeIngestion(builder.Configuration);
 
             var app = builder.Build();
 

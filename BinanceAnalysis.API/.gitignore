@@ -1,0 +1,121 @@
+# Build output
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Aa]rtifacts/
+[Pp]ublish/
+x64/
+x86/
+[Aa]rm/
+[Aa]rm64/
+bld/
+[Bb]inlog/
+
+# Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.vspscc
+*.vssscc
+*.pidb
+*.svclog
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+*.VC.VC.opendb
+
+# Visual Studio extensions / generated files
+Generated\ Files/
+_ReSharper*/
+*.DotSettings.user
+*.ncrunch*
+*.coverage
+*.coveragexml
+
+# JetBrains Rider / ReSharper
+.idea/
+.idea/**/workspace.xml
+.idea/**/tasks.xml
+.idea/**/usage.statistics.xml
+.idea/**/shelf/
+.idea/**/dictionaries/
+.idea/**/contentModel.xml
+
+# VS Code (keep shared workspace recommendations/settings if committed)
+.vscode/*
+!.vscode/extensions.json
+!.vscode/launch.json
+!.vscode/tasks.json
+!.vscode/settings.json
+
+# .NET / NuGet
+project.lock.json
+project.fragment.lock.json
+.nuget/
+**/packages/*
+!**/packages/build/
+*.nupkg
+*.snupkg
+
+# Test results and coverage
+[Tt]est[Rr]esult*/
+[Bb]uild[Ll]og.*
+coverage/
+coverage.*
+*.coverage
+*.coveragexml
+
+# Logs and diagnostics
+[Ll]og/
+[Ll]ogs/
+*.log
+*.stackdump
+dotnet-diagnostic-*.json
+
+# Local configuration, secrets, and environment files
+.env
+.env.*
+!.env.example
+!.env.sample
+secrets.json
+secrets.*.json
+**/secrets/
+**/appsettings.Development.json
+**/appsettings.Local.json
+**/appsettings.*.Local.json
+
+# Local databases and database files
+*.mdf
+*.ldf
+*.db
+*.sqlite
+*.sqlite3
+
+# User-specific / operating-system files
+.DS_Store
+Thumbs.db
+desktop.ini
+*.swp
+*.swo
+*~
+
+# Temporary files
+*.tmp
+*.temp
+*.bak
+*.orig
+*.rej
+
+# Docker / local development overrides
+docker-compose.override.yml
+compose.override.yaml
+compose.override.yml
+
+# Keep repository documentation and safe configuration examples tracked.
+!README.md
+!**/appsettings.example.json
+!**/appsettings.Example.json

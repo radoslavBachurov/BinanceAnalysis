@@ -1,0 +1,18 @@
+<Solution>
+  <Folder Name="/API/">
+    <Project Path="BinanceAnalysis.API.Infrastructure/BinanceAnalysis.API.Infrastructure.csproj" Id="d2a1a116-35a2-4f87-bc69-916913c9301d" />
+    <Project Path="BinanceAnalysis.API.ViewModels/BinanceAnalysis.API.ViewModels.csproj" Id="8d26f6a4-8f6e-433d-8302-cec8ba7e1206" />
+    <Project Path="BinanceAnalysis.API/BinanceAnalysis.API.csproj" />
+  </Folder>
+  <Folder Name="/Data/">
+    <Project Path="BinanceAnalysis.Data.Common/BinanceAnalysis.Data.Common.csproj" Id="3fb8f42b-fbcf-44d6-97f8-ef7fd0a71b0b" />
+    <Project Path="BinanceAnalysis.Data.Models/BinanceAnalysis.Data.Models.csproj" Id="bfc623ac-0022-4cf0-8268-5ecc636ce097" />
+    <Project Path="BinanceAnalysis.Data/BinanceAnalysis.Data.csproj" Id="2450be59-c79e-4b1e-87fc-dabb47fad986" />
+  </Folder>
+  <Folder Name="/Services/">
+    <Project Path="BinanceAnalysis.Services.Data/BinanceAnalysis.Services.Data.csproj" Id="fedf8802-0b29-425a-b389-04b5fec51967" />
+    <Project Path="BinanceAnalysis.Services.Mapping/BinanceAnalysis.Services.Mapping.csproj" Id="7bea597d-92f3-4d88-8832-01a21885f3dd" />
+  </Folder>
+  <Folder Name="/Tests/" />
+  <Project Path="BinanceAnalysis.Common/BinanceAnalysis.Common.csproj" Id="7518d77e-c26b-480f-b294-04653ca55867" />
+</Solution>

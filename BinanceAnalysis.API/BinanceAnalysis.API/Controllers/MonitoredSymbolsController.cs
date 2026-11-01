@@ -24,26 +24,41 @@
         [ProducesResponseType(StatusCodes.Status409Conflict)]
         [ProducesResponseType(StatusCodes.Status400BadRequest)]
         public async Task<IActionResult> Add(
-            [FromBody] CreateMonitoredSymbolRequest request,
-            CancellationToken cancellationToken)
+        [FromBody] CreateMonitoredSymbolRequest request,
+        CancellationToken cancellationToken)
         {
             var symbol = request.Symbol.Trim().ToUpperInvariant();
 
-            var added = await monitoredSymbolService.AddAsync(
+            var result = await monitoredSymbolService.AddAsync(
                 symbol,
                 cancellationToken);
 
-            if (!added)
+            return result switch
             {
-                return Conflict(new
-                {
-                    message = $"Symbol '{symbol}' is already configured."
-                });
-            }
+                AddMonitoredSymbolResult.Added =>
+                    Created(
+                        "/api/admin/symbols",
+                        new
+                        {
+                            Symbol = symbol,
+                            IsActive = true
+                        }),
 
-            return Created(
-                "/api/admin/symbols",
-                new { symbol, isActive = true });
+                AddMonitoredSymbolResult.AlreadyExists =>
+                    Conflict(new
+                    {
+                        Message = $"Symbol {symbol} is already monitored."
+                    }),
+
+                AddMonitoredSymbolResult.InvalidBinanceSymbol =>
+                    BadRequest(new
+                    {
+                        Message = $"Symbol {symbol} does not exist on Binance Spot or is not currently trading."
+                    }),
+
+                _ => throw new InvalidOperationException(
+                    "Unexpected monitored symbol result.")
+            };
         }
 
         [HttpPut("{symbol}")]

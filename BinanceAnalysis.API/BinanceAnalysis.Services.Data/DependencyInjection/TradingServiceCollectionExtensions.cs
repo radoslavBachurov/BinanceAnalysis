@@ -6,6 +6,7 @@ namespace BinanceAnalysis.Services.Data.DependencyInjection
     using BinanceAnalysis.Services.Data.Trading;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
+    using BinanceAnalysis.API.Infrastructure.Binance.Validation;
 
     public static class TradingServiceCollectionExtensions
     {
@@ -31,6 +32,13 @@ namespace BinanceAnalysis.Services.Data.DependencyInjection
             services.AddScoped<IPriceAnalysisService, PriceAnalysisService>();
 
             services.AddScoped<IMonitoredSymbolService, MonitoredSymbolService>();
+
+            services.AddHttpClient<IBinanceSymbolValidationClient, BinanceSymbolValidationClient>(
+            client =>
+            {
+            client.BaseAddress = new Uri("https://api.binance.com/");
+            client.Timeout = TimeSpan.FromSeconds(10);
+            });
 
             return services;
         }

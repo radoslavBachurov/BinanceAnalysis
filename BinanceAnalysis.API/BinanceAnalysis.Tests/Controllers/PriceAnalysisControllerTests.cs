@@ -1,6 +1,7 @@
 ﻿namespace BinanceAnalysis.Tests.Controllers
 {
     using BinanceAnalysis.API.Controllers;
+    using BinanceAnalysis.Common;
     using BinanceAnalysis.Services.Data.Trading;
     using Microsoft.AspNetCore.Mvc;
     using Moq;
@@ -164,6 +165,19 @@
             // Assert
             var okResult = Assert.IsType<OkObjectResult>(result);
             Assert.Equal(77635.25m, okResult.Value);
+        }
+
+        [Fact]
+        public async Task GetSimpleMovingAverage_ReturnsBadRequest_WhenNExceedsMaximum()
+        {
+            var result = await this.controller.GetSimpleMovingAverage(
+                "BTCUSDT",
+                ProjectConstants.MaxDataPoints + 1,
+                "1m",
+                null,
+                CancellationToken.None);
+
+            Assert.IsType<BadRequestObjectResult>(result);
         }
     }
 }

@@ -1,10 +1,15 @@
 ﻿
 namespace BinanceAnalysis.Tests.Services
 {
+    using BinanceAnalysis.API.Infrastructure.Binance.Validation;
+    using BinanceAnalysis.API.ViewModels.Symbols;
     using BinanceAnalysis.Data;
     using BinanceAnalysis.Data.Models;
     using BinanceAnalysis.Services.Data.Symbols;
+    using Microsoft.AspNetCore.Http;
+    using Microsoft.AspNetCore.Mvc;
     using Microsoft.EntityFrameworkCore;
+    using Moq;
     using Xunit;
 
     public class MonitoredSymbolServiceTests
@@ -18,11 +23,22 @@ namespace BinanceAnalysis.Tests.Services
             return new ApplicationDbContext(options);
         }
 
+        private static MonitoredSymbolService CreateService(
+            ApplicationDbContext context,
+            Mock<IBinanceSymbolValidationClient> binanceClientMock)
+        {
+            return new MonitoredSymbolService(
+                context,
+                TimeProvider.System,
+                binanceClientMock.Object);
+        }
+
         [Fact]
         public async Task GetAllAsync_ReturnsAllConfiguredSymbols()
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
             context.MonitoredSymbols.AddRange(
                 new MonitoredSymbol { Symbol = "BTCUSDT" },
@@ -30,9 +46,7 @@ namespace BinanceAnalysis.Tests.Services
 
             await context.SaveChangesAsync();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            var service = CreateService(context, binanceClientMock);
 
             // Act
             var result = await service.GetAllAsync();
@@ -49,48 +63,92 @@ namespace BinanceAnalysis.Tests.Services
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            binanceClientMock
+                .Setup(x => x.IsValidTradingSymbolAsync(
+                    "SOLUSDT",
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(true);
+
+            var service = CreateService(context, binanceClientMock);
 
             // Act
             var result = await service.AddAsync("SOLUSDT");
 
             // Assert
-            Assert.True(result);
+            Assert.Equal(AddMonitoredSymbolResult.Added, result);
 
             var savedSymbol = await context.MonitoredSymbols
                 .SingleAsync(x => x.Symbol == "SOLUSDT");
 
             Assert.True(savedSymbol.IsActive);
             Assert.NotEqual(default, savedSymbol.CreatedAtUtc);
+
+            binanceClientMock.Verify(
+                x => x.IsValidTradingSymbolAsync(
+                    "SOLUSDT",
+                    It.IsAny<CancellationToken>()),
+                Times.Once);
         }
 
         [Fact]
-        public async Task AddAsync_ReturnsFalse_WhenSymbolAlreadyExists()
+        public async Task AddAsync_ReturnsAlreadyExists_WhenSymbolAlreadyExists()
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
             context.MonitoredSymbols.Add(
                 new MonitoredSymbol { Symbol = "BTCUSDT" });
 
             await context.SaveChangesAsync();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            var service = CreateService(context, binanceClientMock);
 
             // Act
             var result = await service.AddAsync("BTCUSDT");
 
             // Assert
-            Assert.False(result);
+            Assert.Equal(AddMonitoredSymbolResult.AlreadyExists, result);
 
             Assert.Equal(
                 1,
                 await context.MonitoredSymbols.CountAsync());
+
+            binanceClientMock.Verify(
+                x => x.IsValidTradingSymbolAsync(
+                    It.IsAny<string>(),
+                    It.IsAny<CancellationToken>()),
+                Times.Never);
+        }
+
+        [Fact]
+        public async Task AddAsync_ReturnsInvalidBinanceSymbol_WhenSymbolIsNotValid()
+        {
+            // Arrange
+            await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
+
+            binanceClientMock
+                .Setup(x => x.IsValidTradingSymbolAsync(
+                    "INVALIDUSDT",
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(false);
+
+            var service = CreateService(context, binanceClientMock);
+
+            // Act
+            var result = await service.AddAsync("INVALIDUSDT");
+
+            // Assert
+            Assert.Equal(
+                AddMonitoredSymbolResult.InvalidBinanceSymbol,
+                result);
+
+            Assert.False(
+                await context.MonitoredSymbols
+                    .AnyAsync(x => x.Symbol == "INVALIDUSDT"));
         }
 
         [Fact]
@@ -98,6 +156,7 @@ namespace BinanceAnalysis.Tests.Services
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
             context.MonitoredSymbols.Add(
                 new MonitoredSymbol
@@ -108,14 +167,10 @@ namespace BinanceAnalysis.Tests.Services
 
             await context.SaveChangesAsync();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            var service = CreateService(context, binanceClientMock);
 
             // Act
-            var result = await service.SetActiveStatusAsync(
-                "SOLUSDT",
-                false);
+            var result = await service.SetActiveStatusAsync("SOLUSDT", false);
 
             // Assert
             Assert.True(result);
@@ -131,6 +186,7 @@ namespace BinanceAnalysis.Tests.Services
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
             context.MonitoredSymbols.Add(
                 new MonitoredSymbol
@@ -141,14 +197,10 @@ namespace BinanceAnalysis.Tests.Services
 
             await context.SaveChangesAsync();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            var service = CreateService(context, binanceClientMock);
 
             // Act
-            var result = await service.SetActiveStatusAsync(
-                "SOLUSDT",
-                true);
+            var result = await service.SetActiveStatusAsync("SOLUSDT", true);
 
             // Assert
             Assert.True(result);
@@ -164,10 +216,9 @@ namespace BinanceAnalysis.Tests.Services
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            var service = CreateService(context, binanceClientMock);
 
             // Act
             var result = await service.SetActiveStatusAsync(
@@ -183,15 +234,14 @@ namespace BinanceAnalysis.Tests.Services
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
             context.MonitoredSymbols.Add(
                 new MonitoredSymbol { Symbol = "SOLUSDT" });
 
             await context.SaveChangesAsync();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            var service = CreateService(context, binanceClientMock);
 
             // Act
             var result = await service.DeleteAsync("SOLUSDT");
@@ -209,10 +259,9 @@ namespace BinanceAnalysis.Tests.Services
         {
             // Arrange
             await using var context = CreateDbContext();
+            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            var service = new MonitoredSymbolService(
-                context,
-                TimeProvider.System);
+            var service = CreateService(context, binanceClientMock);
 
             // Act
             var result = await service.DeleteAsync("UNKNOWNUSDT");

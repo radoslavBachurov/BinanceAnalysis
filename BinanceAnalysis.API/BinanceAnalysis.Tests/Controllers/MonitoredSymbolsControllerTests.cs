@@ -63,7 +63,7 @@
                 .Setup(x => x.AddAsync(
                     "SOLUSDT",
                     It.IsAny<CancellationToken>()))
-                .ReturnsAsync(true);
+                .ReturnsAsync(AddMonitoredSymbolResult.Added);
 
             var request = new CreateMonitoredSymbolRequest
             {
@@ -92,7 +92,7 @@
                 .Setup(x => x.AddAsync(
                     "BTCUSDT",
                     It.IsAny<CancellationToken>()))
-                .ReturnsAsync(false);
+                .ReturnsAsync(AddMonitoredSymbolResult.AlreadyExists);
 
             var request = new CreateMonitoredSymbolRequest
             {
@@ -106,6 +106,30 @@
 
             // Assert
             Assert.IsType<ConflictObjectResult>(result);
+        }
+
+        [Fact]
+        public async Task Add_ReturnsBadRequest_WhenBinanceSymbolIsInvalid()
+        {
+            // Arrange
+            this.monitoredSymbolService
+                .Setup(x => x.AddAsync(
+                    "INVALIDUSDT",
+                    It.IsAny<CancellationToken>()))
+                .ReturnsAsync(AddMonitoredSymbolResult.InvalidBinanceSymbol);
+
+            var request = new CreateMonitoredSymbolRequest
+            {
+                Symbol = "INVALIDUSDT"
+            };
+
+            // Act
+            var result = await this.controller.Add(
+                request,
+                CancellationToken.None);
+
+            // Assert
+            Assert.IsType<BadRequestObjectResult>(result);
         }
 
         [Fact]

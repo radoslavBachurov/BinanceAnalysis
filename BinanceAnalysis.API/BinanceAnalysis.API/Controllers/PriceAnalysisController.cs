@@ -3,6 +3,7 @@
     using BinanceAnalysis.Services.Data.Trading;
     using Microsoft.AspNetCore.Mvc;
     using System.Globalization;
+    using BinanceAnalysis.Common;
 
     [ApiController]
     [Route("api/{symbol}")]
@@ -42,10 +43,12 @@
             [FromQuery] string? s,
             CancellationToken cancellationToken)
         {
-            if (n is null || n <= 0)
+            if (n is null || n <= ProjectConstants.MinDataPoints || n > ProjectConstants.MaxDataPoints)
             {
-                return this.BadRequest(
-                    "Parameter 'n' must be a positive integer.");
+                return BadRequest(
+            $"Number of data points must be between " +
+            $"{ProjectConstants.MinDataPoints} and " +
+            $"{ProjectConstants.MaxDataPoints}.");
             }
 
             if (!TryParsePeriod(p, out var period))

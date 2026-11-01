@@ -1,13 +1,26 @@
 ﻿namespace BinanceAnalysis.Services.Data.Symbols
 {
+    using BinanceAnalysis.API.Infrastructure.Binance.Validation;
     using BinanceAnalysis.Data;
     using BinanceAnalysis.Data.Models;
     using Microsoft.EntityFrameworkCore;
 
-    public class MonitoredSymbolService(
-        ApplicationDbContext dbContext,
-        TimeProvider timeProvider) : IMonitoredSymbolService
+    public class MonitoredSymbolService : IMonitoredSymbolService
     {
+        private readonly ApplicationDbContext dbContext;
+        private readonly TimeProvider timeProvider;
+        private readonly IBinanceSymbolValidationClient binanceSymbolValidationClient;
+
+        public MonitoredSymbolService(
+            ApplicationDbContext dbContext,
+            TimeProvider timeProvider,
+            IBinanceSymbolValidationClient binanceSymbolValidationClient)
+        {
+            this.dbContext = dbContext;
+            this.timeProvider = timeProvider;
+            this.binanceSymbolValidationClient = binanceSymbolValidationClient;
+        }
+
         public async Task<IReadOnlyCollection<MonitoredSymbol>> GetAllAsync(
             CancellationToken cancellationToken = default)
         {
@@ -17,16 +30,26 @@
                 .ToListAsync(cancellationToken);
         }
 
-        public async Task<bool> AddAsync(
-            string symbol,
-            CancellationToken cancellationToken = default)
+        public async Task<AddMonitoredSymbolResult> AddAsync(
+        string symbol,
+        CancellationToken cancellationToken = default)
         {
-            var existingSymbol = await dbContext.MonitoredSymbols
+            symbol = symbol.Trim().ToUpperInvariant();
+
+            var alreadyExists = await dbContext.MonitoredSymbols
                 .AnyAsync(x => x.Symbol == symbol, cancellationToken);
 
-            if (existingSymbol)
+            if (alreadyExists)
             {
-                return false;
+                return AddMonitoredSymbolResult.AlreadyExists;
+            }
+
+            var isValid = await binanceSymbolValidationClient
+                .IsValidTradingSymbolAsync(symbol, cancellationToken);
+
+            if (!isValid)
+            {
+                return AddMonitoredSymbolResult.InvalidBinanceSymbol;
             }
 
             var monitoredSymbol = new MonitoredSymbol
@@ -36,13 +59,11 @@
                 CreatedAtUtc = timeProvider.GetUtcNow().UtcDateTime
             };
 
-            await dbContext.MonitoredSymbols.AddAsync(
-                monitoredSymbol,
-                cancellationToken);
+            dbContext.MonitoredSymbols.Add(monitoredSymbol);
 
             await dbContext.SaveChangesAsync(cancellationToken);
 
-            return true;
+            return AddMonitoredSymbolResult.Added;
         }
 
         public async Task<bool> SetActiveStatusAsync(

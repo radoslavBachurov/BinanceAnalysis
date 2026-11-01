@@ -10,7 +10,7 @@
     using System.Threading.Tasks;
     using BinanceAnalysis.API.Infrastructure.Binance.Models;
 
-    public class BinanceWebSocketClient
+    public class BinanceWebSocketClient : IBinanceWebSocketClient
     {
         private const int BufferSize = 8192;
         private const int MaxMessageSize = 1024 * 1024;

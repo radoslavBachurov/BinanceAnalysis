@@ -16,6 +16,8 @@
     <Project Path="BinanceAnalysis.Services.Data/BinanceAnalysis.Services.Data.csproj" Id="fedf8802-0b29-425a-b389-04b5fec51967" />
     <Project Path="BinanceAnalysis.Services.Mapping/BinanceAnalysis.Services.Mapping.csproj" Id="7bea597d-92f3-4d88-8832-01a21885f3dd" />
   </Folder>
-  <Folder Name="/Tests/" />
+  <Folder Name="/Tests/">
+    <Project Path="BinanceAnalysis.Tests/BinanceAnalysis.Tests.csproj" Id="7bafb235-335f-461d-9c0e-b4936a5750aa" />
+  </Folder>
   <Project Path="BinanceAnalysis.Common/BinanceAnalysis.Common.csproj" Id="7518d77e-c26b-480f-b294-04653ca55867" />
 </Solution>

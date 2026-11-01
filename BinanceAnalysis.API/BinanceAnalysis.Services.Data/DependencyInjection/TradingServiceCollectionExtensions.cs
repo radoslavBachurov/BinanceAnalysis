@@ -18,7 +18,12 @@ namespace BinanceAnalysis.Services.Data.DependencyInjection
 
             services.AddSingleton<BinanceWebSocketClient>();
 
+            services.AddSingleton<IBinanceWebSocketClient>(
+                provider => provider.GetRequiredService<BinanceWebSocketClient>());
+
             services.AddScoped<TradePersistenceService>();
+
+            services.AddSingleton<TimeProvider>(TimeProvider.System);
 
             services.AddHostedService<TradeIngestionService>();
 

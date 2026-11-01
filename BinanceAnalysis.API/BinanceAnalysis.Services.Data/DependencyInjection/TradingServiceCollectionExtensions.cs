@@ -2,6 +2,7 @@
 namespace BinanceAnalysis.Services.Data.DependencyInjection
 {
     using BinanceAnalysis.API.Infrastructure.Binance;
+    using BinanceAnalysis.Services.Data.Symbols;
     using BinanceAnalysis.Services.Data.Trading;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
@@ -28,6 +29,8 @@ namespace BinanceAnalysis.Services.Data.DependencyInjection
             services.AddHostedService<TradeIngestionService>();
 
             services.AddScoped<IPriceAnalysisService, PriceAnalysisService>();
+
+            services.AddScoped<IMonitoredSymbolService, MonitoredSymbolService>();
 
             return services;
         }

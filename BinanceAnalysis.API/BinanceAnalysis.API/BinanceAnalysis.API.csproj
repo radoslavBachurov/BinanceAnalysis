@@ -15,6 +15,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\BinanceAnalysis.API.ViewModels\BinanceAnalysis.API.ViewModels.csproj" />
     <ProjectReference Include="..\BinanceAnalysis.Data\BinanceAnalysis.Data.csproj" />
     <ProjectReference Include="..\BinanceAnalysis.Services.Data\BinanceAnalysis.Services.Data.csproj" />
   </ItemGroup>

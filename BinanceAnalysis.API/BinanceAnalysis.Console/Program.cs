@@ -55,6 +55,13 @@ namespace BinanceAnalysis.Console
             var apiClient = serviceProvider
                 .GetRequiredService<IPriceAnalysisApiClient>();
 
+            var authenticated = await AuthenticateAsync(apiClient);
+
+            if (!authenticated)
+            {
+                return;
+            }
+
             await RunMenuAsync(apiClient);
         }
 
@@ -531,6 +538,83 @@ namespace BinanceAnalysis.Console
                 deleted
                     ? $"Symbol {symbol} deleted successfully."
                     : $"Symbol {symbol} was not found.");
+        }
+
+        private static async Task<bool> AuthenticateAsync(
+    IPriceAnalysisApiClient apiClient)
+        {
+            System.Console.WriteLine();
+            System.Console.WriteLine("ADMINISTRATOR AUTHENTICATION");
+            System.Console.WriteLine("----------------------------");
+
+            System.Console.Write("Username: ");
+            var username = System.Console.ReadLine()?.Trim();
+
+            System.Console.Write("Password: ");
+            var password = ReadPassword();
+
+            if (string.IsNullOrWhiteSpace(username) ||
+                string.IsNullOrWhiteSpace(password))
+            {
+                System.Console.WriteLine("Username and password are required.");
+                return false;
+            }
+
+            try
+            {
+                var authenticated = await apiClient.AuthenticateAsync(
+                    username,
+                    password);
+
+                if (!authenticated)
+                {
+                    System.Console.WriteLine("Invalid administrator credentials.");
+                    return false;
+                }
+
+                System.Console.WriteLine("Authentication successful.");
+                return true;
+            }
+            catch (HttpRequestException exception)
+            {
+                System.Console.WriteLine($"Authentication request failed: {exception.Message}");
+                return false;
+            }
+        }
+
+        private static string ReadPassword()
+        {
+            var password = new System.Text.StringBuilder();
+
+            while (true)
+            {
+                var key = System.Console.ReadKey(intercept: true);
+
+                if (key.Key == ConsoleKey.Enter)
+                {
+                    System.Console.WriteLine();
+                    break;
+                }
+
+                if (key.Key == ConsoleKey.Backspace)
+                {
+                    if (password.Length > 0)
+                    {
+                        password.Length--;
+                        System.Console.Write("\b \b");
+                    }
+
+                    continue;
+                }
+
+                if (!char.IsControl(key.KeyChar))
+                {
+                    password.Append(key.KeyChar);
+                    System.Console.Write("*");
+                }
+            }
+
+            return password.ToString();
         }
     }
 }

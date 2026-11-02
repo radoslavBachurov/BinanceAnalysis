@@ -1,0 +1,17 @@
+
+.git
+.gitignore
+.vs
+.vscode
+
+**/bin/
+**/obj/
+**/Logs/
+**/TestResults/
+
+.env
+.env.*
+!.env.example
+
+*.user
+*.suo

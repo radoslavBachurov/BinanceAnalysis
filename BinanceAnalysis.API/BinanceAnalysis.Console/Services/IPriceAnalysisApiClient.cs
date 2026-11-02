@@ -29,5 +29,10 @@
         Task<bool> DeleteMonitoredSymbolAsync(
             string symbol,
             CancellationToken cancellationToken = default);
+
+        Task<bool> AuthenticateAsync(
+        string username,
+        string password,
+        CancellationToken cancellationToken = default);
     }
 }

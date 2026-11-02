@@ -1,20 +1,21 @@
 
 namespace BinanceAnalysis.API
 {
+    using BinanceAnalysis.API.Configuration;
     using BinanceAnalysis.API.Exceptions;
+    using BinanceAnalysis.API.Services.Authentication;
     using BinanceAnalysis.API.Swagger;
     using BinanceAnalysis.Data;
     using BinanceAnalysis.Data.DependencyInjection;
     using BinanceAnalysis.Data.Seeding;
     using BinanceAnalysis.Services.Data.DependencyInjection;
-    using Microsoft.EntityFrameworkCore;
-    using Serilog;
-    using BinanceAnalysis.API.Configuration;
-    using Microsoft.Extensions.Options;
+    using BinanceAnalysis.Services.Data.Trading;
     using Microsoft.AspNetCore.Authentication.JwtBearer;
+    using Microsoft.EntityFrameworkCore;
+    using Microsoft.Extensions.Options;
     using Microsoft.IdentityModel.Tokens;
-    using BinanceAnalysis.API.Services.Authentication;
     using Microsoft.OpenApi;
+    using Serilog;
 
     public class Program
     {
@@ -131,6 +132,24 @@ namespace BinanceAnalysis.API
             builder.Services.AddSingleton<
             IJwtTokenService,
             JwtTokenService>();
+
+            if (builder.Environment.IsProduction())
+            {
+                builder.Services
+            .AddOptions<MarketPriceRetentionOptions>()
+            .Bind(builder.Configuration.GetSection(
+                MarketPriceRetentionOptions.SectionName))
+            .Validate(
+                options => options.RetentionHours > 0,
+                "RetentionHours must be greater than zero.")
+            .Validate(
+                options => options.CleanupIntervalMinutes > 0,
+                "CleanupIntervalMinutes must be greater than zero.")
+            .Validate(
+                options => options.BatchSize > 0,
+                "BatchSize must be greater than zero.")
+            .ValidateOnStart();
+            }
 
             var app = builder.Build();
 

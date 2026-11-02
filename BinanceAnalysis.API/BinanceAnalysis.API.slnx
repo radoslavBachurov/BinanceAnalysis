@@ -15,6 +15,13 @@
   <Folder Name="/Services/">
     <Project Path="BinanceAnalysis.Services.Data/BinanceAnalysis.Services.Data.csproj" Id="fedf8802-0b29-425a-b389-04b5fec51967" />
   </Folder>
+  <Folder Name="/Solution Items/">
+    <File Path=".dockerignore" />
+    <File Path=".env" />
+    <File Path=".env.example" />
+    <File Path="docker-compose.yml" />
+    <File Path="Dockerfile" />
+  </Folder>
   <Folder Name="/Tests/">
     <Project Path="BinanceAnalysis.Tests/BinanceAnalysis.Tests.csproj" Id="7bafb235-335f-461d-9c0e-b4936a5750aa" />
   </Folder>

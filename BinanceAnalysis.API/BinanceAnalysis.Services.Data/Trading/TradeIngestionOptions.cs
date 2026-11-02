@@ -5,6 +5,8 @@ namespace BinanceAnalysis.Services.Data.Trading
     {
         public const string SectionName = "TradeIngestion";
 
+        public bool Enabled { get; set; } = true;
+
         public int ChannelCapacity { get; set; } = 5000;
 
         public int BatchSize { get; set; } = 500;

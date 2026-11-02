@@ -66,6 +66,14 @@
         protected override async Task ExecuteAsync(
             CancellationToken stoppingToken)
         {
+            if (!this.options.Enabled)
+            {
+                this.logger.LogInformation(
+                    "Trade ingestion is disabled by configuration.");
+
+                return;
+            }
+
             using var producerCts =
                 CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
 

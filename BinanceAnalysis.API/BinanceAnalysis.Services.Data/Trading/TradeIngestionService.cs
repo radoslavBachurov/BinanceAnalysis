@@ -197,6 +197,11 @@
                         this.RunSubscriptionManagerAsync,
                         cancellationToken);
 
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        break;
+                    }
+
                     var connectionDuration =
                     this.timeProvider.GetElapsedTime(connectionStartedAt);
 
@@ -228,14 +233,27 @@
                         "Binance WebSocket connection failed.");
                 }
 
+                if (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+
                 this.logger.LogInformation(
                     "Reconnecting to Binance in {Delay} seconds.",
                     reconnectDelay);
 
-                await Task.Delay(
-                TimeSpan.FromSeconds(reconnectDelay),
-                this.timeProvider,
-                cancellationToken);
+                try
+                {
+                    await Task.Delay(
+                        TimeSpan.FromSeconds(reconnectDelay),
+                        this.timeProvider,
+                        cancellationToken);
+                }
+                catch (OperationCanceledException)
+                    when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
 
                 reconnectDelay = (int)Math.Min(
                     (long)reconnectDelay * 2,

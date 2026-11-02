@@ -12,12 +12,16 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
     using System.Threading.Tasks;
     using BinanceAnalysis.API.Infrastructure.Binance.Models;
     using Microsoft.Extensions.Logging;
+    using System.Collections.Concurrent;
 
     public class BinanceWebSocketClient(
         ILogger<BinanceWebSocketClient> logger) : IBinanceWebSocketClient
     {
         private const int BufferSize = 8192;
         private const int MaxMessageSize = 1024 * 1024;
+
+        private static readonly TimeSpan SubscriptionAcknowledgementTimeout =
+        TimeSpan.FromSeconds(10);
 
         private static readonly Uri BaseUri =
             new("wss://stream.binance.com:9443/stream");
@@ -51,6 +55,9 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
 
             var requestId = 0;
 
+            var pendingAcknowledgements =
+            new ConcurrentDictionary<int, TaskCompletionSource<bool>>();
+
             async Task UpdateSubscriptionsAsync(
                 IReadOnlyCollection<string> requestedSymbols,
                 CancellationToken token)
@@ -71,13 +78,14 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
                 if (symbolsToSubscribe.Length > 0)
                 {
                     await SendSubscriptionCommandAsync(
-                        socket,
-                        sendLock,
-                        logger,
-                        "SUBSCRIBE",
-                        symbolsToSubscribe,
-                        ++requestId,
-                        token);
+                    socket,
+                    sendLock,
+                    logger,
+                    "SUBSCRIBE",
+                    symbolsToSubscribe,
+                    ++requestId,
+                    pendingAcknowledgements,
+                    token);
 
                     subscribedSymbols.UnionWith(symbolsToSubscribe);
                 }
@@ -85,32 +93,56 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
                 if (symbolsToUnsubscribe.Length > 0)
                 {
                     await SendSubscriptionCommandAsync(
-                        socket,
-                        sendLock,
-                        logger,
-                        "UNSUBSCRIBE",
-                        symbolsToUnsubscribe,
-                        ++requestId,
-                        token);
+                    socket,
+                    sendLock,
+                    logger,
+                    "UNSUBSCRIBE",
+                    symbolsToUnsubscribe,
+                    ++requestId,
+                    pendingAcknowledgements,
+                    token);
 
                     subscribedSymbols.ExceptWith(symbolsToUnsubscribe);
                 }
             }
 
-            await UpdateSubscriptionsAsync(
-                initialSymbols,
-                cancellationToken);
-
             using var linkedCts =
-                CancellationTokenSource.CreateLinkedTokenSource(
-                    cancellationToken);
+        CancellationTokenSource.CreateLinkedTokenSource(
+        cancellationToken);
 
+            // Start receiving messages first, so Binance acknowledgements
+            // can be processed while subscription commands are pending.
             var receiveTask = ReceiveTradesAsync(
-                socket,
-                onTrade,
-                logger,
-                linkedCts.Token);
+            socket,
+            onTrade,
+            logger,
+            pendingAcknowledgements,
+            linkedCts.Token);
 
+            // Subscribe to the initial symbols after the receive loop starts.
+            try
+            {
+                await UpdateSubscriptionsAsync(
+                    initialSymbols,
+                    linkedCts.Token);
+            }
+            catch
+            {
+                linkedCts.Cancel();
+
+                try
+                {
+                    await receiveTask;
+                }
+                catch
+                {
+                    // Preserve the original subscription failure.
+                }
+
+                throw;
+            }
+
+            // Start monitoring runtime symbol changes.
             var subscriptionTask = runSubscriptionManager(
                 UpdateSubscriptionsAsync,
                 linkedCts.Token);
@@ -165,13 +197,14 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
         }
 
         private static async Task SendSubscriptionCommandAsync(
-            ClientWebSocket socket,
-            SemaphoreSlim sendLock,
-            ILogger<BinanceWebSocketClient> logger,
-            string method,
-            string[] symbols,
-            int requestId,
-            CancellationToken cancellationToken)
+    ClientWebSocket socket,
+    SemaphoreSlim sendLock,
+    ILogger<BinanceWebSocketClient> logger,
+    string method,
+    string[] symbols,
+    int requestId,
+    ConcurrentDictionary<int, TaskCompletionSource<bool>> pendingAcknowledgements,
+    CancellationToken cancellationToken)
         {
             var streams = symbols
                 .Select(symbol => $"{symbol.ToLowerInvariant()}@trade")
@@ -184,142 +217,214 @@ namespace BinanceAnalysis.API.Infrastructure.Binance
                 id = requestId
             });
 
-            await sendLock.WaitAsync(cancellationToken);
+            var acknowledgement = new TaskCompletionSource<bool>(
+                TaskCreationOptions.RunContinuationsAsynchronously);
+
+            if (!pendingAcknowledgements.TryAdd(requestId, acknowledgement))
+            {
+                throw new InvalidOperationException(
+                    $"A subscription request with ID {requestId} is already pending.");
+            }
 
             try
             {
-                await socket.SendAsync(
-                    new ArraySegment<byte>(command),
-                    WebSocketMessageType.Text,
-                    true,
+                await sendLock.WaitAsync(cancellationToken);
+
+                try
+                {
+                    await socket.SendAsync(
+                        new ArraySegment<byte>(command),
+                        WebSocketMessageType.Text,
+                        true,
+                        cancellationToken);
+
+                    logger.LogInformation(
+                        "Sent Binance {Method} request for {SymbolCount} symbols: {Symbols}. RequestId: {RequestId}",
+                        method,
+                        symbols.Length,
+                        string.Join(", ", symbols),
+                        requestId);
+                }
+                finally
+                {
+                    sendLock.Release();
+                }
+
+                // Wait until the receive loop processes the matching response.
+                await acknowledgement.Task.WaitAsync(
+                    SubscriptionAcknowledgementTimeout,
                     cancellationToken);
 
                 logger.LogInformation(
-                    "Sent Binance {Method} request for {SymbolCount} symbols: {Symbols}. RequestId: {RequestId}",
+                    "Binance confirmed {Method} request for {SymbolCount} symbols. RequestId: {RequestId}",
                     method,
                     symbols.Length,
-                    string.Join(", ", symbols),
                     requestId);
+            }
+            catch (TimeoutException exception)
+            {
+                logger.LogError(
+                    exception,
+                    "Timed out waiting for Binance {Method} acknowledgement. RequestId: {RequestId}",
+                    method,
+                    requestId);
+
+                throw;
             }
             finally
             {
-                sendLock.Release();
+                pendingAcknowledgements.TryRemove(requestId, out _);
             }
         }
+
 
         private static async Task ReceiveTradesAsync(
             ClientWebSocket socket,
             Func<BinanceTradeEvent, CancellationToken, Task> onTrade,
             ILogger<BinanceWebSocketClient> logger,
+            ConcurrentDictionary<int, TaskCompletionSource<bool>> pendingAcknowledgements,
             CancellationToken cancellationToken)
         {
             var buffer = new byte[BufferSize];
 
-            while (!cancellationToken.IsCancellationRequested &&
-                   socket.State == WebSocketState.Open)
+            try
             {
-                using var messageStream = new MemoryStream();
-
-                WebSocketReceiveResult result;
-
-                do
+                while (!cancellationToken.IsCancellationRequested &&
+                       socket.State == WebSocketState.Open)
                 {
-                    result = await socket.ReceiveAsync(
-                        new ArraySegment<byte>(buffer),
-                        cancellationToken);
+                    using var messageStream = new MemoryStream();
 
-                    if (result.MessageType == WebSocketMessageType.Close)
+                    WebSocketReceiveResult result;
+
+                    do
+                    {
+                        result = await socket.ReceiveAsync(
+                            new ArraySegment<byte>(buffer),
+                            cancellationToken);
+
+                        if (result.MessageType == WebSocketMessageType.Close)
+                        {
+                            logger.LogWarning(
+                                "Binance WebSocket sent a close frame. Status: {CloseStatus}. Description: {CloseDescription}",
+                                result.CloseStatus,
+                                result.CloseStatusDescription);
+
+                            return;
+                        }
+
+                        if (result.MessageType != WebSocketMessageType.Text)
+                        {
+                            throw new InvalidDataException(
+                                "Unexpected WebSocket message type.");
+                        }
+
+                        if (messageStream.Length + result.Count > MaxMessageSize)
+                        {
+                            throw new InvalidDataException(
+                                "WebSocket message exceeded the maximum allowed size.");
+                        }
+
+                        await messageStream.WriteAsync(
+                            buffer.AsMemory(0, result.Count),
+                            cancellationToken);
+
+                    } while (!result.EndOfMessage);
+
+                    var payload = messageStream.ToArray();
+
+                    var message =
+                        JsonSerializer.Deserialize<BinanceCombinedStreamMessage>(
+                            payload);
+
+                    if (message is null)
                     {
                         logger.LogWarning(
-                            "Binance WebSocket sent a close frame. Status: {CloseStatus}. Description: {CloseDescription}",
-                            result.CloseStatus,
-                            result.CloseStatusDescription);
+                            "Received an empty or invalid Binance message.");
 
-                        return;
+                        continue;
                     }
 
-                    if (result.MessageType != WebSocketMessageType.Text)
+                    // Handle subscription acknowledgements and errors.
+                    if (message.Id.HasValue)
                     {
-                        throw new InvalidDataException(
-                            "Unexpected WebSocket message type.");
+                        if (!pendingAcknowledgements.TryGetValue(
+                                message.Id.Value,
+                                out var pendingRequest))
+                        {
+                            logger.LogWarning(
+                                "Received a Binance response for an unknown request ID: {RequestId}",
+                                message.Id.Value);
+
+                            continue;
+                        }
+
+                        if (message.Error is not null)
+                        {
+                            var error = new InvalidOperationException(
+                                $"Binance rejected the subscription request. " +
+                                $"Code: {message.Error.Code}. " +
+                                $"Message: {message.Error.Message}");
+
+                            logger.LogWarning(
+                                "Binance rejected subscription request {RequestId}. Code: {Code}. Message: {Message}",
+                                message.Id.Value,
+                                message.Error.Code,
+                                message.Error.Message);
+
+                            pendingRequest.TrySetException(error);
+                        }
+                        else if (message.Result.ValueKind == JsonValueKind.Null)
+                        {
+                            logger.LogDebug(
+                                "Received successful Binance subscription acknowledgement. RequestId: {RequestId}",
+                                message.Id.Value);
+
+                            pendingRequest.TrySetResult(true);
+                        }
+                        else
+                        {
+                            logger.LogWarning(
+                                "Received an unexpected Binance subscription response. RequestId: {RequestId}",
+                                message.Id.Value);
+
+                            pendingRequest.TrySetException(
+                                new InvalidOperationException(
+                                    $"Unexpected Binance response for request {message.Id.Value}."));
+                        }
+
+                        continue;
                     }
 
-                    if (messageStream.Length + result.Count > MaxMessageSize)
+                    // Process normal trade events.
+                    if (message.Data is not { } trade)
                     {
-                        throw new InvalidDataException(
-                            "WebSocket message exceeded the maximum allowed size.");
+                        continue;
                     }
 
-                    await messageStream.WriteAsync(
-                        buffer.AsMemory(0, result.Count),
-                        cancellationToken);
+                    if (trade.EventType != "trade")
+                    {
+                        continue;
+                    }
 
-                } while (!result.EndOfMessage);
-
-                var payload = messageStream.ToArray();
-
-                var message =
-                    JsonSerializer.Deserialize<BinanceCombinedStreamMessage>(
-                        payload);
-
-                // Subscription acknowledgements don't contain trade data.
-                if (message?.Data is not { } trade)
-                {
-                    LogSubscriptionResponse(payload, logger);
-                    continue;
+                    await onTrade(trade, cancellationToken);
                 }
-
-                if (trade.EventType != "trade")
+            }
+            finally
+            {
+                // Release any subscription requests still waiting for acknowledgements.
+                foreach (var pendingRequest in pendingAcknowledgements.Values)
                 {
-                    continue;
+                    if (cancellationToken.IsCancellationRequested)
+                    {
+                        pendingRequest.TrySetCanceled(cancellationToken);
+                    }
+                    else
+                    {
+                        pendingRequest.TrySetException(
+                            new WebSocketException(
+                                "Binance WebSocket connection ended before the subscription acknowledgement was received."));
+                    }
                 }
-
-                await onTrade(trade, cancellationToken);
-            }
-        }
-
-        private static void LogSubscriptionResponse(
-            byte[] payload,
-            ILogger<BinanceWebSocketClient> logger)
-        {
-            using var document = JsonDocument.Parse(payload);
-
-            var root = document.RootElement;
-
-            if (root.ValueKind != JsonValueKind.Object)
-            {
-                return;
-            }
-
-            if (root.TryGetProperty("error", out var error))
-            {
-                var code = error.TryGetProperty("code", out var codeElement)
-                    ? codeElement.ToString()
-                    : "Unknown";
-
-                var message = error.TryGetProperty("msg", out var messageElement)
-                    ? messageElement.GetString()
-                    : "Unknown Binance error";
-
-                var requestId = root.TryGetProperty("id", out var idElement)
-                    ? idElement.ToString()
-                    : "Unknown";
-
-                logger.LogWarning(
-                    "Binance rejected a subscription request. RequestId: {RequestId}. Code: {Code}. Message: {Message}",
-                    requestId,
-                    code,
-                    message);
-
-                return;
-            }
-
-            if (root.TryGetProperty("result", out _) &&
-                root.TryGetProperty("id", out var responseId))
-            {
-                logger.LogDebug(
-                    "Received Binance subscription acknowledgement. RequestId: {RequestId}",
-                    responseId.ToString());
             }
         }
     }

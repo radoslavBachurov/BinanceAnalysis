@@ -28,15 +28,17 @@ The client compares desired subscriptions with its local subscription set and se
 
 Reconnects use bounded exponential backoff. Cancellation is propagated through receive and subscription workflows.
 
-### Known subscription limitation
 
-The local subscription set is updated after a command is sent, not after its acknowledgement is confirmed. The client logs Binance acknowledgements and errors but does not currently correlate each response with a pending request before updating local state. A future improvement is request-ID-based acknowledgement tracking and reconciliation after rejected commands.
+Subscription commands wait for their matching Binance acknowledgement, with a 10-second timeout. Rejected or unexpected responses fail the current WebSocket session so that the ingestion service can reconnect and rebuild subscriptions from the active database configuration. Pending acknowledgement tasks are also completed when the receive loop terminates.
+
+
+
 
 ### Deployment consideration
 
 The hosted ingestion service is intended to have one active owner of Binance subscriptions. Running multiple API replicas with the ingestion worker enabled can create duplicate network subscriptions and event traffic. A scaled deployment should separate the ingestion worker or use distributed lease/leader ownership. The database unique index protects stored uniqueness but does not eliminate duplicated ingestion traffic.
 
-Shutdown draining should be verified under realistic cancellation and database-failure conditions before claiming a strict no-loss guarantee.
+Shutdown draining should be verified under realistic cancellation and database-failure conditions before claiming a strict no-loss guarantee. A normal Ctrl+C shutdown was manually verified to complete persistence of the remaining queued batch before process exit. This does not establish a strict durability guarantee under forced termination or database failure.
 
 ## 4. Persistence and data integrity
 
@@ -150,7 +152,6 @@ A security integration test initially expected 404 from a public price endpoint,
 
 ## 11. Known limitations and future improvements
 
-1. Correlate Binance subscription acknowledgements by request ID and reconcile rejected commands.
 2. Ensure a single ingestion owner or distributed lease when deploying multiple API instances.
 3. Clarify whether SMA data points mean individual trades or fixed-interval/candle observations.
 4. Confirm the optional `s` window interpretation with the assessment reviewer if necessary.

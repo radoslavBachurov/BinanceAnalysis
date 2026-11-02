@@ -4,14 +4,14 @@ FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 
 WORKDIR /src
 
-# Copy the solution and project files.
+# Copy the complete solution.
 COPY . .
 
-# Restore dependencies, including referenced projects.
-RUN dotnet restore BinanceAnalysis.API/BinanceAnalysis.API.csproj
+# Restore dependencies.
+RUN dotnet restore BinanceAnalysis.API/BinanceAnalysis.API/BinanceAnalysis.API.csproj
 
 # Publish the API.
-RUN dotnet publish BinanceAnalysis.API/BinanceAnalysis.API.csproj \
+RUN dotnet publish BinanceAnalysis.API/BinanceAnalysis.API/BinanceAnalysis.API.csproj \
     --configuration Release \
     --output /app/publish \
     --no-restore

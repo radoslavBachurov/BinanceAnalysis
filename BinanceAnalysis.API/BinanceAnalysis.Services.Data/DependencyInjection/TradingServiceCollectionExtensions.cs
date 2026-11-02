@@ -33,12 +33,17 @@ namespace BinanceAnalysis.Services.Data.DependencyInjection
 
             services.AddScoped<IMonitoredSymbolService, MonitoredSymbolService>();
 
-            services.AddHttpClient<IBinanceSymbolValidationClient, BinanceSymbolValidationClient>(
+            services.AddHttpClient<
+            IBinanceSymbolValidationClient,
+            BinanceSymbolValidationClient>(
             client =>
             {
-            client.BaseAddress = new Uri("https://api.binance.com/");
-            client.Timeout = TimeSpan.FromSeconds(10);
-            });
+                client.BaseAddress = new Uri("https://api.binance.com/");
+
+                // The resilience handler controls request timeouts.
+                client.Timeout = Timeout.InfiniteTimeSpan;
+            })
+            .AddStandardResilienceHandler();
 
             return services;
         }

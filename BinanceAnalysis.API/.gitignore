@@ -119,3 +119,6 @@ compose.override.yml
 !README.md
 !**/appsettings.example.json
 !**/appsettings.Example.json
+
+# Application logs
+**/Logs/

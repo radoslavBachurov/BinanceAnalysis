@@ -8,6 +8,7 @@ namespace BinanceAnalysis.Console
     using BinanceAnalysis.Console.Services;
     using Microsoft.Extensions.Configuration;
     using Microsoft.Extensions.DependencyInjection;
+    using Microsoft.Extensions.Http.Resilience;
 
     internal class Program
     {
@@ -33,11 +34,21 @@ namespace BinanceAnalysis.Console
             var services = new ServiceCollection();
 
             services.AddHttpClient<IPriceAnalysisApiClient, PriceAnalysisApiClient>(
-                client =>
-                {
-                    client.BaseAddress = baseUri;
-                    client.Timeout = TimeSpan.FromSeconds(30);
-                });
+            client =>
+            {
+                client.BaseAddress = baseUri;
+
+         // Let the resilience handler control request timeouts.
+                client.Timeout = Timeout.InfiniteTimeSpan;
+            })
+            .AddStandardResilienceHandler(options =>
+            {
+         // Do not retry operations that modify monitored symbols.
+                options.Retry.DisableFor(
+                     HttpMethod.Post,
+                     HttpMethod.Put,
+                     HttpMethod.Delete);
+                     });
 
             using var serviceProvider = services.BuildServiceProvider();
 

@@ -9,11 +9,13 @@
   <ItemGroup>
     <PackageReference Include="Microsoft.EntityFrameworkCore.SqlServer" Version="10.0.14" />
     <PackageReference Include="Microsoft.Extensions.Hosting.Abstractions" Version="10.0.14" />
+    <PackageReference Include="Microsoft.Extensions.Http.Resilience" Version="10.11.0" />
     <PackageReference Include="Microsoft.Extensions.Options.ConfigurationExtensions" Version="10.0.14" />
   </ItemGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\BinanceAnalysis.API.Infrastructure\BinanceAnalysis.API.Infrastructure.csproj" />
+    <ProjectReference Include="..\BinanceAnalysis.API.ViewModels\BinanceAnalysis.API.ViewModels.csproj" />
     <ProjectReference Include="..\BinanceAnalysis.Data\BinanceAnalysis.Data.csproj" />
   </ItemGroup>
 

@@ -1,6 +1,9 @@
-﻿namespace BinanceAnalysis.API.Infrastructure.Binance.Validation
+﻿
+namespace BinanceAnalysis.API.Infrastructure.Binance.Validation
 {
+    using System.Net;
     using System.Net.Http.Json;
+    using System.Text.Json;
     using BinanceAnalysis.API.Infrastructure.Binance.Validation.Models;
     using Microsoft.Extensions.Logging;
 
@@ -13,19 +16,34 @@
             string symbol,
             CancellationToken cancellationToken = default)
         {
-            var response = await httpClient.GetAsync(
+            using var response = await httpClient.GetAsync(
                 $"api/v3/exchangeInfo?symbol={Uri.EscapeDataString(symbol)}",
                 cancellationToken);
 
-            if (!response.IsSuccessStatusCode)
+            if (response.StatusCode == HttpStatusCode.BadRequest)
             {
-                logger.LogInformation(
-                    "Binance symbol validation returned HTTP {StatusCode} for {Symbol}.",
-                    (int)response.StatusCode,
-                    symbol);
+                await using var stream = await response.Content
+                    .ReadAsStreamAsync(cancellationToken);
 
-                return false;
+                using var errorDocument = await JsonDocument.ParseAsync(
+                    stream,
+                    cancellationToken: cancellationToken);
+
+                if (errorDocument.RootElement.TryGetProperty(
+                        "code",
+                        out var codeElement) &&
+                    codeElement.TryGetInt32(out var errorCode) &&
+                    errorCode == -1121)
+                {
+                    logger.LogInformation(
+                        "Binance rejected {Symbol} because it is an invalid symbol.",
+                        symbol);
+
+                    return false;
+                }
             }
+
+            response.EnsureSuccessStatusCode();
 
             var result = await response.Content
                 .ReadFromJsonAsync<BinanceSymbolValidationResponse>(
@@ -37,7 +55,16 @@
                     symbol,
                     StringComparison.OrdinalIgnoreCase));
 
-            return symbolInfo?.Status == "TRADING";
+            var isTrading = symbolInfo?.Status == "TRADING";
+
+            if (!isTrading)
+            {
+                logger.LogInformation(
+                    "Binance symbol {Symbol} is not currently in TRADING status.",
+                    symbol);
+            }
+
+            return isTrading;
         }
     }
 }

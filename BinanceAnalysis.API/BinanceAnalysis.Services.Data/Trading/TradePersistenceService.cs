@@ -27,6 +27,7 @@ namespace BinanceAnalysis.Services.Data.Trading
             this.logger = logger;
         }
 
+
         public async Task<int> PersistBatchAsync(
             IReadOnlyCollection<BinanceTradeEvent> trades,
             CancellationToken cancellationToken = default)
@@ -37,6 +38,9 @@ namespace BinanceAnalysis.Services.Data.Trading
             {
                 return 0;
             }
+
+            var receivedCount = trades.Count;
+            var invalidCount = 0;
 
             var marketPrices = new List<MarketPrice>();
 
@@ -52,10 +56,7 @@ namespace BinanceAnalysis.Services.Data.Trading
                         out var price) ||
                     price <= 0)
                 {
-                    this.logger.LogWarning(
-                        "Ignoring invalid Binance trade message for symbol {Symbol}.",
-                        trade.Symbol);
-
+                    invalidCount++;
                     continue;
                 }
 
@@ -69,11 +70,7 @@ namespace BinanceAnalysis.Services.Data.Trading
                 }
                 catch (ArgumentOutOfRangeException)
                 {
-                    this.logger.LogWarning(
-                        "Ignoring trade {TradeId} for {Symbol}: invalid trade timestamp.",
-                        trade.TradeId,
-                        trade.Symbol);
-
+                    invalidCount++;
                     continue;
                 }
 
@@ -87,8 +84,21 @@ namespace BinanceAnalysis.Services.Data.Trading
                 });
             }
 
+            if (invalidCount > 0)
+            {
+                this.logger.LogWarning(
+                    "Ignored {InvalidCount} invalid trades out of {ReceivedCount} received trades.",
+                    invalidCount,
+                    receivedCount);
+            }
+
             if (marketPrices.Count == 0)
             {
+                this.logger.LogInformation(
+                    "Trade batch contained no valid trades. Received: {ReceivedCount}. Invalid: {InvalidCount}.",
+                    receivedCount,
+                    invalidCount);
+
                 return 0;
             }
 
@@ -97,9 +107,11 @@ namespace BinanceAnalysis.Services.Data.Trading
                 .Select(group => group.First())
                 .ToList();
 
-            var newTrades = new List<MarketPrice>();
+            var duplicatesInBatch = marketPrices.Count - uniqueTrades.Count;
 
             const int chunkSize = 1000;
+
+            var newTrades = new List<MarketPrice>();
 
             foreach (var group in uniqueTrades.GroupBy(x => x.Symbol))
             {
@@ -125,8 +137,25 @@ namespace BinanceAnalysis.Services.Data.Trading
                     group.Where(x => !existingIds.Contains(x.TradeId)));
             }
 
+            var existingCount = uniqueTrades.Count - newTrades.Count;
+
+            this.logger.LogDebug(
+                "Prepared trade batch. Received: {ReceivedCount}, Invalid: {InvalidCount}, Duplicates within batch: {DuplicatesInBatch}, Already in database: {ExistingCount}, Candidates for insertion: {NewTradeCount}.",
+                receivedCount,
+                invalidCount,
+                duplicatesInBatch,
+                existingCount,
+                newTrades.Count);
+
             if (newTrades.Count == 0)
             {
+                this.logger.LogInformation(
+                    "No new trades to persist. Received: {ReceivedCount}, Invalid: {InvalidCount}, Duplicates within batch: {DuplicatesInBatch}, Already in database: {ExistingCount}.",
+                    receivedCount,
+                    invalidCount,
+                    duplicatesInBatch,
+                    existingCount);
+
                 return 0;
             }
 
@@ -146,15 +175,18 @@ namespace BinanceAnalysis.Services.Data.Trading
                         cancellationToken);
 
                     this.logger.LogInformation(
-                        "Persisted {TradeCount} market trades.",
-                        insertedCount);
+                        "Persisted {InsertedCount} market trades. Received: {ReceivedCount}, Invalid: {InvalidCount}, Duplicates within batch: {DuplicatesInBatch}, Already in database: {ExistingCount}.",
+                        insertedCount,
+                        receivedCount,
+                        invalidCount,
+                        duplicatesInBatch,
+                        existingCount);
 
                     return insertedCount;
                 }
                 catch (DbUpdateException exception)
                     when (IsDuplicateKeyException(exception))
                 {
-                    // Detach only the entities involved in this failed attempt.
                     foreach (var trade in pendingTrades)
                     {
                         var entry = this.context.Entry(trade);
@@ -165,7 +197,6 @@ namespace BinanceAnalysis.Services.Data.Trading
                         }
                     }
 
-                    // Check which candidate trades were inserted by other writers.
                     var existingKeys = await this.FindExistingTradeKeysAsync(
                         pendingTrades,
                         chunkSize,
@@ -175,21 +206,19 @@ namespace BinanceAnalysis.Services.Data.Trading
                         .Where(x => !existingKeys.Contains((x.Symbol, x.TradeId)))
                         .ToList();
 
-                    // All candidates were inserted by another writer.
                     if (pendingTrades.Count == 0)
                     {
                         this.logger.LogInformation(
-                            "All trades in the batch were already persisted by another writer.");
+                            "All candidate trades were persisted by another writer. Duplicate conflicts resolved successfully.");
 
                         return 0;
                     }
 
-                    // Do not retry indefinitely.
                     if (attempt == maxSaveAttempts)
                     {
                         this.logger.LogError(
                             exception,
-                            "Could not persist {TradeCount} trades after {MaxAttempts} attempts.",
+                            "Could not persist {TradeCount} remaining trades after {MaxAttempts} attempts.",
                             pendingTrades.Count,
                             maxSaveAttempts);
 
@@ -207,6 +236,7 @@ namespace BinanceAnalysis.Services.Data.Trading
 
             return 0;
         }
+
 
         private static bool IsDuplicateKeyException(Exception exception)
         {

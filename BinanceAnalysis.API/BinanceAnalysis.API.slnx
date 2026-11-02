@@ -14,7 +14,6 @@
   </Folder>
   <Folder Name="/Services/">
     <Project Path="BinanceAnalysis.Services.Data/BinanceAnalysis.Services.Data.csproj" Id="fedf8802-0b29-425a-b389-04b5fec51967" />
-    <Project Path="BinanceAnalysis.Services.Mapping/BinanceAnalysis.Services.Mapping.csproj" Id="7bea597d-92f3-4d88-8832-01a21885f3dd" />
   </Folder>
   <Folder Name="/Tests/">
     <Project Path="BinanceAnalysis.Tests/BinanceAnalysis.Tests.csproj" Id="7bafb235-335f-461d-9c0e-b4936a5750aa" />

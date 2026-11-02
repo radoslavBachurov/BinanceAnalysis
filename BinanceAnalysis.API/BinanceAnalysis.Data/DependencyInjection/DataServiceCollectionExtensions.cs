@@ -22,7 +22,15 @@ namespace BinanceAnalysis.Data.DependencyInjection
                     "Connection string 'DefaultConnection' was not found.");
 
             services.AddDbContext<ApplicationDbContext>(options =>
-                options.UseSqlServer(connectionString));
+         options.UseSqlServer(
+         connectionString,
+         sqlServerOptions =>
+         {
+             sqlServerOptions.EnableRetryOnFailure(
+                 maxRetryCount: 3,
+                 maxRetryDelay: TimeSpan.FromSeconds(5),
+                 errorNumbersToAdd: null);
+         }));
 
             services.AddScoped<ISeeder, MonitoredSymbolsSeeder>();
             services.AddScoped<ApplicationDbContextSeeder>();

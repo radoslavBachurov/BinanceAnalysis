@@ -14,6 +14,7 @@
     using Microsoft.Extensions.Hosting;
     using Microsoft.Extensions.Logging;
     using Microsoft.Extensions.Options;
+    using System.Runtime.ExceptionServices;
 
     public class TradeIngestionService : BackgroundService
     {
@@ -61,40 +62,100 @@
                 });
         }
 
+
         protected override async Task ExecuteAsync(
             CancellationToken stoppingToken)
         {
-            using var linkedCts =
+            using var producerCts =
                 CancellationTokenSource.CreateLinkedTokenSource(stoppingToken);
 
             var consumerTask = this.PersistTradesAsync();
 
+            var producerTask =
+                this.ReceiveTradesWithReconnectAsync(producerCts.Token);
+
+            Exception? failure = null;
+
             try
             {
-                var producerTask =
-                    this.ReceiveTradesWithReconnectAsync(linkedCts.Token);
-
                 var completedTask = await Task.WhenAny(
                     producerTask,
                     consumerTask);
 
                 if (completedTask == consumerTask)
                 {
-                    linkedCts.Cancel();
-                    await consumerTask;
-                }
+                    try
+                    {
+                        await consumerTask;
 
-                await producerTask;
+                        if (!stoppingToken.IsCancellationRequested)
+                        {
+                            failure = new InvalidOperationException(
+                                "Trade persistence consumer stopped unexpectedly.");
+                        }
+                    }
+                    catch (Exception exception)
+                    {
+                        failure = exception;
+                    }
+
+                    // Stop receiving trades if persistence has stopped.
+                    producerCts.Cancel();
+                }
+                else
+                {
+                    try
+                    {
+                        await producerTask;
+                    }
+                    catch (OperationCanceledException)
+                        when (stoppingToken.IsCancellationRequested)
+                    {
+                        // Normal application shutdown.
+                    }
+                    catch (Exception exception)
+                    {
+                        failure = exception;
+                    }
+                }
             }
             finally
             {
-                this.channel.Writer.TryComplete();
-                linkedCts.Cancel();
+                // Stop the producer and signal that no more trades will arrive.
+                producerCts.Cancel();
+                this.channel.Writer.TryComplete(failure);
             }
 
-            // Drain and persist any remaining trades before shutdown.
-            await consumerTask;
+            // Always observe both tasks.
+            try
+            {
+                await consumerTask;
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+
+            try
+            {
+                await producerTask;
+            }
+            catch (OperationCanceledException)
+                when (producerCts.IsCancellationRequested)
+            {
+                // Expected when stopping the producer.
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
         }
+
 
         private async Task ReceiveTradesWithReconnectAsync(
         CancellationToken cancellationToken)
@@ -263,6 +324,7 @@
             }
         }
 
+
         private async Task FlushBatchAsync(
             List<BinanceTradeEvent> batch)
         {
@@ -272,9 +334,31 @@
             var persistenceService = scope.ServiceProvider
                 .GetRequiredService<TradePersistenceService>();
 
-            await persistenceService.PersistBatchAsync(
-                batch,
-                CancellationToken.None);
+            var tradeCount = batch.Count;
+
+            try
+            {
+                this.logger.LogDebug(
+                    "Persisting trade batch containing {TradeCount} trades.",
+                    tradeCount);
+
+                await persistenceService.PersistBatchAsync(
+                    batch,
+                    CancellationToken.None);
+
+                this.logger.LogInformation(
+                    "Successfully processed trade batch containing {TradeCount} trades.",
+                    tradeCount);
+            }
+            catch (Exception exception)
+            {
+                this.logger.LogError(
+                    exception,
+                    "Failed to persist trade batch containing {TradeCount} trades.",
+                    tradeCount);
+
+                throw;
+            }
         }
 
         private async Task RunSubscriptionManagerAsync(
@@ -290,9 +374,9 @@
                 var activeSymbols = await this.GetActiveSymbolsAsync(
                     cancellationToken);
 
-                this.logger.LogInformation(
-                    "Refreshing Binance subscriptions. Active symbols: {Symbols}",
-                    string.Join(", ", activeSymbols));
+                this.logger.LogDebug(
+                "Refreshing Binance subscriptions. Active symbols: {Symbols}",
+                string.Join(", ", activeSymbols));
 
                 await updateSubscriptions(
                     activeSymbols,

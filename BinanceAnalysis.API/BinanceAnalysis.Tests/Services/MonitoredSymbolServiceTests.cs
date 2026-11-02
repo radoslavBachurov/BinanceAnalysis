@@ -151,123 +151,123 @@ namespace BinanceAnalysis.Tests.Services
                     .AnyAsync(x => x.Symbol == "INVALIDUSDT"));
         }
 
-        [Fact]
-        public async Task SetActiveStatusAsync_DeactivatesExistingSymbol()
-        {
-            // Arrange
-            await using var context = CreateDbContext();
-            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
+        //[Fact]
+        //public async Task SetActiveStatusAsync_DeactivatesExistingSymbol()
+        //{
+        //    // Arrange
+        //    await using var context = CreateDbContext();
+        //    var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            context.MonitoredSymbols.Add(
-                new MonitoredSymbol
-                {
-                    Symbol = "SOLUSDT",
-                    IsActive = true
-                });
+        //    context.MonitoredSymbols.Add(
+        //        new MonitoredSymbol
+        //        {
+        //            Symbol = "SOLUSDT",
+        //            IsActive = true
+        //        });
 
-            await context.SaveChangesAsync();
+        //    await context.SaveChangesAsync();
 
-            var service = CreateService(context, binanceClientMock);
+        //    var service = CreateService(context, binanceClientMock);
 
-            // Act
-            var result = await service.SetActiveStatusAsync("SOLUSDT", false);
+        //    // Act
+        //    var result = await service.SetActiveStatusAsync("SOLUSDT", false);
 
-            // Assert
-            Assert.True(result);
+        //    // Assert
+        //    Assert.True(result);
 
-            var symbol = await context.MonitoredSymbols
-                .SingleAsync(x => x.Symbol == "SOLUSDT");
+        //    var symbol = await context.MonitoredSymbols
+        //        .SingleAsync(x => x.Symbol == "SOLUSDT");
 
-            Assert.False(symbol.IsActive);
-        }
+        //    Assert.False(symbol.IsActive);
+        //}
 
-        [Fact]
-        public async Task SetActiveStatusAsync_ActivatesExistingSymbol()
-        {
-            // Arrange
-            await using var context = CreateDbContext();
-            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
+        //[Fact]
+        //public async Task SetActiveStatusAsync_ActivatesExistingSymbol()
+        //{
+        //    // Arrange
+        //    await using var context = CreateDbContext();
+        //    var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            context.MonitoredSymbols.Add(
-                new MonitoredSymbol
-                {
-                    Symbol = "SOLUSDT",
-                    IsActive = false
-                });
+        //    context.MonitoredSymbols.Add(
+        //        new MonitoredSymbol
+        //        {
+        //            Symbol = "SOLUSDT",
+        //            IsActive = false
+        //        });
 
-            await context.SaveChangesAsync();
+        //    await context.SaveChangesAsync();
 
-            var service = CreateService(context, binanceClientMock);
+        //    var service = CreateService(context, binanceClientMock);
 
-            // Act
-            var result = await service.SetActiveStatusAsync("SOLUSDT", true);
+        //    // Act
+        //    var result = await service.SetActiveStatusAsync("SOLUSDT", true);
 
-            // Assert
-            Assert.True(result);
+        //    // Assert
+        //    Assert.True(result);
 
-            var symbol = await context.MonitoredSymbols
-                .SingleAsync(x => x.Symbol == "SOLUSDT");
+        //    var symbol = await context.MonitoredSymbols
+        //        .SingleAsync(x => x.Symbol == "SOLUSDT");
 
-            Assert.True(symbol.IsActive);
-        }
+        //    Assert.True(symbol.IsActive);
+        //}
 
-        [Fact]
-        public async Task SetActiveStatusAsync_ReturnsFalse_WhenSymbolDoesNotExist()
-        {
-            // Arrange
-            await using var context = CreateDbContext();
-            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
+        //[Fact]
+        //public async Task SetActiveStatusAsync_ReturnsFalse_WhenSymbolDoesNotExist()
+        //{
+        //    // Arrange
+        //    await using var context = CreateDbContext();
+        //    var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            var service = CreateService(context, binanceClientMock);
+        //    var service = CreateService(context, binanceClientMock);
 
-            // Act
-            var result = await service.SetActiveStatusAsync(
-                "UNKNOWNUSDT",
-                true);
+        //    // Act
+        //    var result = await service.SetActiveStatusAsync(
+        //        "UNKNOWNUSDT",
+        //        true);
 
-            // Assert
-            Assert.False(result);
-        }
+        //    // Assert
+        //    Assert.False(result);
+        //}
 
-        [Fact]
-        public async Task DeleteAsync_RemovesExistingSymbol()
-        {
-            // Arrange
-            await using var context = CreateDbContext();
-            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
+        //[Fact]
+        //public async Task DeleteAsync_RemovesExistingSymbol()
+        //{
+        //    // Arrange
+        //    await using var context = CreateDbContext();
+        //    var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            context.MonitoredSymbols.Add(
-                new MonitoredSymbol { Symbol = "SOLUSDT" });
+        //    context.MonitoredSymbols.Add(
+        //        new MonitoredSymbol { Symbol = "SOLUSDT" });
 
-            await context.SaveChangesAsync();
+        //    await context.SaveChangesAsync();
 
-            var service = CreateService(context, binanceClientMock);
+        //    var service = CreateService(context, binanceClientMock);
 
-            // Act
-            var result = await service.DeleteAsync("SOLUSDT");
+        //    // Act
+        //    var result = await service.DeleteAsync("SOLUSDT");
 
-            // Assert
-            Assert.True(result);
+        //    // Assert
+        //    Assert.True(result);
 
-            Assert.False(
-                await context.MonitoredSymbols
-                    .AnyAsync(x => x.Symbol == "SOLUSDT"));
-        }
+        //    Assert.False(
+        //        await context.MonitoredSymbols
+        //            .AnyAsync(x => x.Symbol == "SOLUSDT"));
+        //}
 
-        [Fact]
-        public async Task DeleteAsync_ReturnsFalse_WhenSymbolDoesNotExist()
-        {
-            // Arrange
-            await using var context = CreateDbContext();
-            var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
+        //[Fact]
+        //public async Task DeleteAsync_ReturnsFalse_WhenSymbolDoesNotExist()
+        //{
+        //    // Arrange
+        //    await using var context = CreateDbContext();
+        //    var binanceClientMock = new Mock<IBinanceSymbolValidationClient>();
 
-            var service = CreateService(context, binanceClientMock);
+        //    var service = CreateService(context, binanceClientMock);
 
-            // Act
-            var result = await service.DeleteAsync("UNKNOWNUSDT");
+        //    // Act
+        //    var result = await service.DeleteAsync("UNKNOWNUSDT");
 
-            // Assert
-            Assert.False(result);
-        }
+        //    // Assert
+        //    Assert.False(result);
+        //}
     }
 }

@@ -1,16 +1,20 @@
-﻿namespace BinanceAnalysis.API.Infrastructure.Binance
+﻿
+namespace BinanceAnalysis.API.Infrastructure.Binance
 {
     using System;
     using System.Collections.Generic;
     using System.IO;
     using System.Linq;
     using System.Net.WebSockets;
+    using System.Runtime.ExceptionServices;
     using System.Text.Json;
     using System.Threading;
     using System.Threading.Tasks;
     using BinanceAnalysis.API.Infrastructure.Binance.Models;
+    using Microsoft.Extensions.Logging;
 
-    public class BinanceWebSocketClient : IBinanceWebSocketClient
+    public class BinanceWebSocketClient(
+        ILogger<BinanceWebSocketClient> logger) : IBinanceWebSocketClient
     {
         private const int BufferSize = 8192;
         private const int MaxMessageSize = 1024 * 1024;
@@ -37,6 +41,10 @@
             socket.Options.KeepAliveInterval = TimeSpan.FromSeconds(30);
 
             await socket.ConnectAsync(BaseUri, cancellationToken);
+
+            logger.LogInformation(
+                "Successfully connected to Binance WebSocket endpoint {Endpoint}.",
+                BaseUri);
 
             var subscribedSymbols = new HashSet<string>(
                 StringComparer.OrdinalIgnoreCase);
@@ -65,6 +73,7 @@
                     await SendSubscriptionCommandAsync(
                         socket,
                         sendLock,
+                        logger,
                         "SUBSCRIBE",
                         symbolsToSubscribe,
                         ++requestId,
@@ -78,6 +87,7 @@
                     await SendSubscriptionCommandAsync(
                         socket,
                         sendLock,
+                        logger,
                         "UNSUBSCRIBE",
                         symbolsToUnsubscribe,
                         ++requestId,
@@ -87,7 +97,6 @@
                 }
             }
 
-            // Subscribe to the initial symbols.
             await UpdateSubscriptionsAsync(
                 initialSymbols,
                 cancellationToken);
@@ -99,29 +108,66 @@
             var receiveTask = ReceiveTradesAsync(
                 socket,
                 onTrade,
+                logger,
                 linkedCts.Token);
 
             var subscriptionTask = runSubscriptionManager(
                 UpdateSubscriptionsAsync,
                 linkedCts.Token);
 
+            var completedTask = await Task.WhenAny(
+                receiveTask,
+                subscriptionTask);
+
+            linkedCts.Cancel();
+
+            Exception? failure = null;
+
             try
             {
-                await Task.WhenAny(receiveTask, subscriptionTask);
-                linkedCts.Cancel();
-
-                await Task.WhenAll(receiveTask, subscriptionTask);
+                await receiveTask;
             }
             catch (OperationCanceledException)
                 when (linkedCts.IsCancellationRequested)
             {
                 // Expected when the connection is closed or cancelled.
             }
+            catch (Exception exception)
+            {
+                failure = exception;
+            }
+
+            try
+            {
+                await subscriptionTask;
+            }
+            catch (OperationCanceledException)
+                when (linkedCts.IsCancellationRequested)
+            {
+                // Expected when the connection is closed or cancelled.
+            }
+            catch (Exception exception)
+            {
+                failure ??= exception;
+            }
+
+            if (failure is not null)
+            {
+                ExceptionDispatchInfo.Capture(failure).Throw();
+            }
+
+            if (completedTask == subscriptionTask &&
+                !cancellationToken.IsCancellationRequested)
+            {
+                throw new InvalidOperationException(
+                    "The Binance subscription manager stopped unexpectedly.");
+            }
         }
 
         private static async Task SendSubscriptionCommandAsync(
             ClientWebSocket socket,
             SemaphoreSlim sendLock,
+            ILogger<BinanceWebSocketClient> logger,
             string method,
             string[] symbols,
             int requestId,
@@ -147,6 +193,13 @@
                     WebSocketMessageType.Text,
                     true,
                     cancellationToken);
+
+                logger.LogInformation(
+                    "Sent Binance {Method} request for {SymbolCount} symbols: {Symbols}. RequestId: {RequestId}",
+                    method,
+                    symbols.Length,
+                    string.Join(", ", symbols),
+                    requestId);
             }
             finally
             {
@@ -157,6 +210,7 @@
         private static async Task ReceiveTradesAsync(
             ClientWebSocket socket,
             Func<BinanceTradeEvent, CancellationToken, Task> onTrade,
+            ILogger<BinanceWebSocketClient> logger,
             CancellationToken cancellationToken)
         {
             var buffer = new byte[BufferSize];
@@ -176,6 +230,11 @@
 
                     if (result.MessageType == WebSocketMessageType.Close)
                     {
+                        logger.LogWarning(
+                            "Binance WebSocket sent a close frame. Status: {CloseStatus}. Description: {CloseDescription}",
+                            result.CloseStatus,
+                            result.CloseStatusDescription);
+
                         return;
                     }
 
@@ -197,14 +256,16 @@
 
                 } while (!result.EndOfMessage);
 
+                var payload = messageStream.ToArray();
+
                 var message =
                     JsonSerializer.Deserialize<BinanceCombinedStreamMessage>(
-                        messageStream.ToArray());
+                        payload);
 
-                // Subscription acknowledgements also arrive over this socket.
-                // They don't contain a trade event, so we ignore them.
+                // Subscription acknowledgements don't contain trade data.
                 if (message?.Data is not { } trade)
                 {
+                    LogSubscriptionResponse(payload, logger);
                     continue;
                 }
 
@@ -214,6 +275,51 @@
                 }
 
                 await onTrade(trade, cancellationToken);
+            }
+        }
+
+        private static void LogSubscriptionResponse(
+            byte[] payload,
+            ILogger<BinanceWebSocketClient> logger)
+        {
+            using var document = JsonDocument.Parse(payload);
+
+            var root = document.RootElement;
+
+            if (root.ValueKind != JsonValueKind.Object)
+            {
+                return;
+            }
+
+            if (root.TryGetProperty("error", out var error))
+            {
+                var code = error.TryGetProperty("code", out var codeElement)
+                    ? codeElement.ToString()
+                    : "Unknown";
+
+                var message = error.TryGetProperty("msg", out var messageElement)
+                    ? messageElement.GetString()
+                    : "Unknown Binance error";
+
+                var requestId = root.TryGetProperty("id", out var idElement)
+                    ? idElement.ToString()
+                    : "Unknown";
+
+                logger.LogWarning(
+                    "Binance rejected a subscription request. RequestId: {RequestId}. Code: {Code}. Message: {Message}",
+                    requestId,
+                    code,
+                    message);
+
+                return;
+            }
+
+            if (root.TryGetProperty("result", out _) &&
+                root.TryGetProperty("id", out var responseId))
+            {
+                logger.LogDebug(
+                    "Received Binance subscription acknowledgement. RequestId: {RequestId}",
+                    responseId.ToString());
             }
         }
     }

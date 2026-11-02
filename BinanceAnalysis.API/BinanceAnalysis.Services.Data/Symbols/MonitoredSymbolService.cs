@@ -4,6 +4,7 @@
     using BinanceAnalysis.Data;
     using BinanceAnalysis.Data.Models;
     using Microsoft.EntityFrameworkCore;
+    using Microsoft.Data.SqlClient;
 
     public class MonitoredSymbolService : IMonitoredSymbolService
     {
@@ -61,52 +62,56 @@
 
             dbContext.MonitoredSymbols.Add(monitoredSymbol);
 
-            await dbContext.SaveChangesAsync(cancellationToken);
+            try
+            {
+                await dbContext.SaveChangesAsync(cancellationToken);
+                return AddMonitoredSymbolResult.Added;
+            }
+            catch (DbUpdateException exception)
+            {
+                if (exception.GetBaseException() is SqlException sqlException &&
+                    sqlException.Number is 2601 or 2627)
+                {
+                    dbContext.Entry(monitoredSymbol).State = EntityState.Detached;
 
-            return AddMonitoredSymbolResult.Added;
+                    return AddMonitoredSymbolResult.AlreadyExists;
+                }
+
+                throw;
+            }
         }
+
 
         public async Task<bool> SetActiveStatusAsync(
             string symbol,
             bool isActive,
             CancellationToken cancellationToken = default)
         {
-            var monitoredSymbol = await dbContext.MonitoredSymbols
-                .FirstOrDefaultAsync(
-                    x => x.Symbol == symbol,
+            symbol = symbol.Trim().ToUpperInvariant();
+
+            var affectedRows = await dbContext.MonitoredSymbols
+                .Where(x => x.Symbol == symbol)
+                .ExecuteUpdateAsync(
+                    setters => setters.SetProperty(
+                        x => x.IsActive,
+                        isActive),
                     cancellationToken);
 
-            if (monitoredSymbol is null)
-            {
-                return false;
-            }
-
-            monitoredSymbol.IsActive = isActive;
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            return true;
+            return affectedRows > 0;
         }
 
         public async Task<bool> DeleteAsync(
             string symbol,
             CancellationToken cancellationToken = default)
         {
-            var monitoredSymbol = await dbContext.MonitoredSymbols
-                .FirstOrDefaultAsync(
-                    x => x.Symbol == symbol,
-                    cancellationToken);
+            symbol = symbol.Trim().ToUpperInvariant();
 
-            if (monitoredSymbol is null)
-            {
-                return false;
-            }
+            var affectedRows = await dbContext.MonitoredSymbols
+                .Where(x => x.Symbol == symbol)
+                .ExecuteDeleteAsync(cancellationToken);
 
-            dbContext.MonitoredSymbols.Remove(monitoredSymbol);
-
-            await dbContext.SaveChangesAsync(cancellationToken);
-
-            return true;
+            return affectedRows > 0;
         }
+
     }
 }

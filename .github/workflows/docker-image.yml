@@ -46,7 +46,7 @@ jobs:
       - name: Build and publish Docker image
         uses: docker/build-push-action@v6
         with:
-          context: .
+          context: ./BinanceAnalysis.API
           file: ./BinanceAnalysis.API/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}

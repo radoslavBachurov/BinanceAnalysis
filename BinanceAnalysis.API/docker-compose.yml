@@ -24,7 +24,7 @@ services:
   api:
     build:
       context: .
-      dockerfile: BinanceAnalysis.API/Dockerfile
+      dockerfile: Dockerfile
     container_name: binanceanalysis-api
     depends_on:
       db:

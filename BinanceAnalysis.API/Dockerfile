@@ -8,10 +8,10 @@ WORKDIR /src
 COPY . .
 
 # Restore dependencies.
-RUN dotnet restore BinanceAnalysis.API/BinanceAnalysis.API/BinanceAnalysis.API.csproj
+RUN dotnet restore BinanceAnalysis.API/BinanceAnalysis.API.csproj
 
 # Publish the API.
-RUN dotnet publish BinanceAnalysis.API/BinanceAnalysis.API/BinanceAnalysis.API.csproj \
+RUN dotnet publish BinanceAnalysis.API/BinanceAnalysis.API.csproj \
     --configuration Release \
     --output /app/publish \
     --no-restore
